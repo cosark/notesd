@@ -19,6 +19,7 @@ import (
 
 	"notes/server/internal/auth"
 	"notes/server/internal/database"
+	"notes/server/internal/editors"
 	"notes/server/internal/llm"
 	"notes/server/internal/mail"
 	"notes/server/internal/notes"
@@ -31,9 +32,14 @@ import (
 type Config struct {
 	// ResendURL overrides Resend's API base URL (tests).
 	ResendURL string
+	// SocketPing overrides how often the agent socket pings (tests).
+	SocketPing time.Duration
 	// OnAIChanged is called after the AI settings are saved or removed, so
 	// agents waiting for them resume or pause.
 	OnAIChanged func()
+	// Editors are the connected note editors, shared with the agent runner;
+	// nil gets a hub of the server's own.
+	Editors *editors.Hub
 	// Version is the server's build version (v1.2.3), sent on every
 	// response; empty is a development build, sent as "dev".
 	Version string
@@ -60,6 +66,7 @@ type Server struct {
 	cfg      Config
 	releases *releases
 	sharing  *sharing.Service
+	editors  *editors.Hub
 }
 
 // New returns a server over the system database and users' notes databases.
@@ -70,6 +77,10 @@ func New(system *database.DB, users *userdata.Registry, authSvc *auth.Service, l
 		d.Spaces.AddTrait("agent", d.Agent.Trait(func(ctx context.Context) (llm.Settings, error) { return llm.Load(ctx, system) }))
 	}, nil)
 	authSvc.BeforeRemove(sharing.HandOff)
+	hub := cfg.Editors
+	if hub == nil {
+		hub = editors.NewHub()
+	}
 	return &Server{
 		system: system, users: users, auth: authSvc, log: log, cfg: cfg,
 		limiter:  auth.NewLimiter(10, 15*time.Minute),
@@ -77,6 +88,7 @@ func New(system *database.DB, users *userdata.Registry, authSvc *auth.Service, l
 		ai:       llm.NewClient(),
 		releases: newReleases(cfg.ReleasesURL),
 		sharing:  share,
+		editors:  hub,
 	}
 }
 
@@ -138,6 +150,7 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("GET /api/v1/agent/usage", s.authed(s.agentUsage))
 	mux.Handle("GET /api/v1/agent/runs/{id}", s.authed(s.agentRun))
 	mux.Handle("POST /api/v1/agent/runs/{id}/undo", s.authed(s.undoAgentRun))
+	mux.Handle("GET /api/v1/agent/socket", s.authed(s.agentSocket))
 	mux.Handle("GET /api/v1/settings/ai", s.authed(s.aiSettings))
 	mux.Handle("PUT /api/v1/settings/ai", s.authed(adminOnly(s.saveAISettings)))
 	mux.Handle("DELETE /api/v1/settings/ai", s.authed(adminOnly(s.deleteAISettings)))
