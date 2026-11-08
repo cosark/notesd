@@ -126,6 +126,7 @@ export default defineConfig({
           { text: "Sharing with others", link: "/guides/using/sharing" },
           { text: "Locked notes", link: "/guides/using/locked-notes" },
           { text: "Emailing notes", link: "/guides/using/email" },
+          { text: "Agents", link: "/guides/using/agents" },
           { text: "Offline and sync", link: "/guides/using/offline-and-sync" },
           { text: "Settings", link: "/guides/using/settings" },
         ],
