@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"strconv"
 
+	"notes/server/internal/agent"
 	"notes/server/internal/auth"
 	"notes/server/internal/images"
 	"notes/server/internal/llm"
@@ -109,6 +110,7 @@ func (s *Server) writeErr(w http.ResponseWriter, r *http.Request, err error) {
 	var aiIn *llm.InputError
 	var aiTest *llm.TestError
 	var aiErr *llm.ProviderError
+	var agentIn *agent.InputError
 	var terr *images.TypeError
 	var serr *spaces.InputError
 	var full *spaces.NotEmptyError
@@ -122,6 +124,10 @@ func (s *Server) writeErr(w http.ResponseWriter, r *http.Request, err error) {
 		writeJSON(w, http.StatusBadRequest, errorBody{Error: "invalid_request", Message: merr.Message, Field: merr.Field})
 	case errors.As(err, &aiIn):
 		writeJSON(w, http.StatusBadRequest, errorBody{Error: "invalid_request", Message: aiIn.Message, Field: aiIn.Field})
+	case errors.As(err, &agentIn):
+		writeJSON(w, http.StatusBadRequest, errorBody{Error: "invalid_request", Message: agentIn.Message, Field: agentIn.Field})
+	case errors.Is(err, agent.ErrSpaceNotFound):
+		writeError(w, http.StatusNotFound, "not_found", "space not found")
 	case errors.As(err, &lerr):
 		writeJSON(w, http.StatusBadRequest, errorBody{Error: "invalid_request", Message: lerr.Message, Field: lerr.Field})
 	case errors.As(err, &serr):

@@ -26,6 +26,7 @@ import { LockedNotesCard } from './locked-notes'
 import { PeopleCard } from './people'
 import { SECTIONS, type SettingsSection } from './sections'
 import { SpacesCard } from './spaces'
+import { TimeZoneCard } from './time-zone'
 import styles from './settings.module.css'
 
 /** On a phone. Opened from the list, a page's entry is popped, so browser Back won't reopen the page. */
@@ -373,6 +374,7 @@ function SettingsPage({
           </Surface>
           <PeopleCard username={username} />
           <UpdateCard />
+          <TimeZoneCard />
         </>
       )
     case 'security':

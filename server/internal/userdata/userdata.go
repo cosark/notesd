@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"sync"
 
+	"notes/server/internal/agent"
 	"notes/server/internal/database"
 	"notes/server/internal/images"
 	"notes/server/internal/locks"
@@ -30,10 +31,19 @@ type Data struct {
 	Locks  *locks.Store
 	Images *images.Store
 	Spaces *spaces.Store
+	// Agent is nil in a shared space's file: agents run in an account's own spaces only (§7.10).
+	Agent *agent.Store
 }
 
-// New wraps an open notes database.
+// New wraps an account's open notes database.
 func New(db *database.DB) *Data {
+	d := newShared(db)
+	d.Agent = agent.NewStore(db)
+	return d
+}
+
+// newShared wraps a shared space's open notes database.
+func newShared(db *database.DB) *Data {
 	return &Data{DB: db, Notes: notes.NewStore(db), Locks: locks.NewStore(db), Images: images.NewStore(db), Spaces: spaces.NewStore(db)}
 }
 
@@ -154,7 +164,7 @@ func (r *Registry) openSpace(ctx context.Context, spaceID string) (*Data, error)
 		db.Close()
 		return nil, fmt.Errorf("%s: %w", path, err)
 	}
-	d := New(db)
+	d := newShared(db)
 	d.Notes.ServeShared(spaceID)
 	if fn := r.onSpaceChange; fn != nil {
 		d.onCommit(func() { fn(spaceID) })
