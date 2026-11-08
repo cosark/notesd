@@ -39,6 +39,7 @@ type Data struct {
 func New(db *database.DB) *Data {
 	d := newShared(db)
 	d.Agent = agent.NewStore(db)
+	d.Notes.OnWrite(d.Agent.OnWrite)
 	return d
 }
 
@@ -68,6 +69,11 @@ type Registry struct {
 	onSpaceChange func(spaceID string)
 	onOpenUser    []func(userID int64, d *Data)
 	onOpenSpace   []func(spaceID string, d *Data)
+
+	// Apart from mu, which is held while a database opens and migrates, so
+	// a write elsewhere never waits on that to notify.
+	hooksMu sync.RWMutex
+	onAgent []func(userID int64)
 }
 
 // NewRegistry returns a registry for the users and shared spaces in dataDir.
@@ -110,6 +116,24 @@ func (r *Registry) OnChange(fn func(userID int64)) {
 	r.onChange = fn
 }
 
+// OnAgentScheduled adds fn, called when a write gives a user's agents
+// something new to wait for (see agent.Store.OnScheduled), also for
+// databases open already. fn must not block.
+func (r *Registry) OnAgentScheduled(fn func(userID int64)) {
+	r.hooksMu.Lock()
+	defer r.hooksMu.Unlock()
+	r.onAgent = append(r.onAgent, fn)
+}
+
+func (r *Registry) agentScheduled(userID int64) {
+	r.hooksMu.RLock()
+	fns := r.onAgent
+	r.hooksMu.RUnlock()
+	for _, fn := range fns {
+		fn(userID)
+	}
+}
+
 // Open returns a user's data, opening (and creating, for a new user) their
 // database the first time: migrations, then any pending rebuild of derived
 // data. A user added from the command line while the server runs is picked
@@ -133,6 +157,8 @@ func (r *Registry) Open(ctx context.Context, userID int64) (*Data, error) {
 	if fn := r.onChange; fn != nil {
 		d.onCommit(func() { fn(userID) })
 	}
+	// Looked up when it fires, so a runner started after this database opened still hears it.
+	d.Agent.OnScheduled(func() { r.agentScheduled(userID) })
 	for _, fn := range r.onOpenUser {
 		fn(userID, d)
 	}
