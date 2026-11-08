@@ -66,8 +66,8 @@ type Registry struct {
 	spaces        map[string]*Data
 	onChange      func(userID int64)
 	onSpaceChange func(spaceID string)
-	onOpenUser    func(userID int64, d *Data)
-	onOpenSpace   func(spaceID string, d *Data)
+	onOpenUser    []func(userID int64, d *Data)
+	onOpenSpace   []func(spaceID string, d *Data)
 }
 
 // NewRegistry returns a registry for the users and shared spaces in dataDir.
@@ -75,17 +75,23 @@ func NewRegistry(dataDir string) *Registry {
 	return &Registry{dir: dataDir, open: map[int64]*Data{}, spaces: map[string]*Data{}}
 }
 
-// OnOpen has users' and spaces' stores set up by fn, those open already and
-// those that open later: what depends on more than one file.
+// OnOpen adds user and space, which set up users' and spaces' stores, those
+// open already and those that open later: what depends on more than one file.
+// Either may be nil.
 func (r *Registry) OnOpen(user func(userID int64, d *Data), space func(spaceID string, d *Data)) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.onOpenUser, r.onOpenSpace = user, space
-	for id, d := range r.open {
-		user(id, d)
+	if user != nil {
+		r.onOpenUser = append(r.onOpenUser, user)
+		for id, d := range r.open {
+			user(id, d)
+		}
 	}
-	for id, d := range r.spaces {
-		space(id, d)
+	if space != nil {
+		r.onOpenSpace = append(r.onOpenSpace, space)
+		for id, d := range r.spaces {
+			space(id, d)
+		}
 	}
 }
 
@@ -127,7 +133,7 @@ func (r *Registry) Open(ctx context.Context, userID int64) (*Data, error) {
 	if fn := r.onChange; fn != nil {
 		d.onCommit(func() { fn(userID) })
 	}
-	if fn := r.onOpenUser; fn != nil {
+	for _, fn := range r.onOpenUser {
 		fn(userID, d)
 	}
 	r.open[userID] = d
@@ -169,7 +175,7 @@ func (r *Registry) openSpace(ctx context.Context, spaceID string) (*Data, error)
 	if fn := r.onSpaceChange; fn != nil {
 		d.onCommit(func() { fn(spaceID) })
 	}
-	if fn := r.onOpenSpace; fn != nil {
+	for _, fn := range r.onOpenSpace {
 		fn(spaceID, d)
 	}
 	r.spaces[spaceID] = d

@@ -1,5 +1,6 @@
 import type { ComponentType } from 'react'
 import type { Space, SpaceTrait } from '../api/types'
+import { AgentSection, useAgentOffered } from '../settings/agent-section'
 import { PeopleSection } from '../settings/shared-space'
 import { DEFAULT_SPACE } from './default-space'
 
@@ -70,7 +71,8 @@ const canShare = (space: Space) => space.id !== DEFAULT_SPACE && (!space.shared 
 export const TRAITS: readonly TraitEntry[] = [
   { key: 'shared', label: 'Shared', Glyph: SharedGlyph, Section: PeopleSection, canTurnOn: canShare },
   { key: 'published', label: 'Published', Glyph: PublishedGlyph, canTurnOn: off },
-  { key: 'agent', label: 'Agent', Glyph: AgentGlyph, canTurnOn: off },
+  // Agents run in an account's own spaces only (§7.10).
+  { key: 'agent', label: 'Agent', Glyph: AgentGlyph, Section: AgentSection, canTurnOn: (space) => !space.shared },
 ]
 
 export function traitEntry(key: string): TraitEntry | undefined {
@@ -105,6 +107,14 @@ export function newExposure(from: Pick<Space, 'traits'> | undefined, to: Pick<Sp
   })
 }
 
+/** Whether this account can turn a trait on now, beyond the space allowing it: what needs the server's settings. */
+type Offered = (key: string, space: Space) => boolean
+
+export function useOffered(): Offered {
+  const agent = useAgentOffered()
+  return (key, space) => key !== 'agent' || agent(space)
+}
+
 export type TraitRow =
   | { kind: 'on'; entry: TraitEntry; trait: SpaceTrait }
   | { kind: 'off'; entry: TraitEntry }
@@ -114,11 +124,11 @@ export type TraitRow =
  * Space info's rows: each trait this app knows, in order, when on or when it
  * could be turned on; then any on that it doesn't know, as the server sent them.
  */
-export function traitRows(space: Space): TraitRow[] {
+export function traitRows(space: Space, offered: Offered = () => true): TraitRow[] {
   const known: TraitRow[] = TRAITS.flatMap((entry): TraitRow[] => {
     const trait = space.traits.find((t) => t.key === entry.key)
     if (trait) return [{ kind: 'on', entry, trait }]
-    return entry.canTurnOn(space) ? [{ kind: 'off', entry }] : []
+    return entry.canTurnOn(space) && offered(entry.key, space) ? [{ kind: 'off', entry }] : []
   })
   const unknown = space.traits.filter((t) => !traitEntry(t.key)).map((trait): TraitRow => ({ kind: 'unknown', trait }))
   return [...known, ...unknown]

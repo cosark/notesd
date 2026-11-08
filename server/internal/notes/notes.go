@@ -225,6 +225,7 @@ func (e *ElsewhereError) Error() string { return "space " + e.SpaceID + " is in 
 
 // ErrLockedInShared refuses a locked body in a shared space's file (§7.9).
 var ErrLockedInShared = errors.New("locked notes can't be in a shared space")
+
 // Event kinds.
 const (
 	EventCreated = "created"

@@ -5,12 +5,13 @@ import { genericMessage } from '../auth/errors'
 import { SpaceIcon, SpaceIconPicker } from '../notes/space-icon'
 import { themeKey } from '../notes/space-theme'
 import { DEFAULT_SPACE, deleteSpace, putSpace, reloadSpaces, useSpaces } from '../notes/spaces'
-import { traitGlyph, traitRows, traitsLabel, UnknownGlyph, type TraitRow } from '../notes/traits'
+import { traitGlyph, traitRows, traitsLabel, UnknownGlyph, useOffered, type TraitRow } from '../notes/traits'
 import { Button } from '../ui/button'
 import { Dialog } from '../ui/dialog'
 import { InlineConfirm } from '../ui/inline-confirm'
 import settings from './settings.module.css'
 import styles from './space-info.module.css'
+import { UnsavedProvider, useUnsavedSections } from './unsaved'
 
 export const noteCount = (n: number) => `${n} ${n === 1 ? 'note' : 'notes'}`
 
@@ -30,6 +31,10 @@ export function SpaceInfo({ id, onClose }: { id: string; onClose: () => void }) 
   const picks = useRef(0)
   const [deleting, setDeleting] = useState<'asking' | 'busy' | null>(null)
   const [error, setError] = useState<string>()
+  const offered = useOffered()
+  // A section's unsaved changes (an agent's draft) are asked about under Done; deleted, there's nothing to keep.
+  const { sections, unsaved } = useUnsavedSections()
+  const [discarding, setDiscarding] = useState<string[] | null>(null)
 
   // Deleted, here or on another device: nothing left to show.
   useEffect(() => {
@@ -62,6 +67,12 @@ export function SpaceInfo({ id, onClose }: { id: string; onClose: () => void }) 
     }
   }
 
+  function close() {
+    const what = unsaved()
+    if (what.length > 0) setDiscarding(what)
+    else onClose()
+  }
+
   async function remove() {
     setDeleting('busy')
     setError(undefined)
@@ -86,7 +97,8 @@ export function SpaceInfo({ id, onClose }: { id: string; onClose: () => void }) 
   }
 
   return (
-    <Dialog labelledBy={titleId} onClose={onClose} space={themeKey(shownIcon)} wide>
+    <Dialog labelledBy={titleId} onClose={close} space={themeKey(shownIcon)} wide>
+      <UnsavedProvider value={sections}>
       <div className={styles.page}>
         <div className={styles.head}>
           {own ? (
@@ -125,7 +137,7 @@ export function SpaceInfo({ id, onClose }: { id: string; onClose: () => void }) 
           </p>
         )}
 
-        {blocks(traitRows(space)).map((block) =>
+        {blocks(traitRows(space, offered)).map((block) =>
           block.kind === 'section' ? (
             <block.Section key={block.key} space={space} />
           ) : (
@@ -138,6 +150,11 @@ export function SpaceInfo({ id, onClose }: { id: string; onClose: () => void }) 
         )}
 
         <div className={styles.end}>
+          {discarding && (
+            <InlineConfirm title="Discard your changes?" action="Discard" onConfirm={onClose} onCancel={() => setDiscarding(null)}>
+              Your changes to {discarding.join(' and ')} aren’t saved.
+            </InlineConfirm>
+          )}
           {own && deleting && (
             <InlineConfirm
               title={`Delete ${space.name}?`}
@@ -163,7 +180,7 @@ export function SpaceInfo({ id, onClose }: { id: string; onClose: () => void }) 
                 Delete space…
               </Button>
             )}
-            <Button size="md" onClick={onClose}>
+            <Button size="md" aria-expanded={discarding !== null} onClick={close}>
               Done
             </Button>
           </div>
@@ -174,6 +191,7 @@ export function SpaceInfo({ id, onClose }: { id: string; onClose: () => void }) 
           )}
         </div>
       </div>
+      </UnsavedProvider>
     </Dialog>
   )
 }

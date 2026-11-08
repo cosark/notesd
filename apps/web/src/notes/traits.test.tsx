@@ -9,6 +9,7 @@ const calendar: SpaceTrait = { key: 'calendar', label: 'Calendar', summary: 'Syn
 
 const space = (...traits: SpaceTrait[]): Space => ({ id: 's', name: 'S', icon: '', createdAt: 0, noteCount: 0, traits })
 const canTurnOn = (s: Space) => TRAITS.filter((t) => t.canTurnOn(s)).map((t) => t.key)
+const keys = (rows: ReturnType<typeof traitRows>) => rows.map((r) => [r.kind, r.kind === 'off' ? r.entry.key : r.trait.key])
 
 describe('the registry', () => {
   it('keeps the server’s order', () => {
@@ -22,11 +23,17 @@ describe('the registry', () => {
   })
 
   it('offers sharing for a space of the account’s own, never the default, nor to a member', () => {
-    expect(canTurnOn(space())).toEqual(['shared'])
-    expect(canTurnOn({ ...space(), id: 'default' })).toEqual([])
+    expect(canTurnOn(space())).toContain('shared')
+    expect(canTurnOn({ ...space(), id: 'default' })).not.toContain('shared')
     // Shared once, no one left in it: its owner can share it again.
     expect(canTurnOn({ ...space(), shared: { role: 'owner', members: [{ id: 1, username: 'me' }] } })).toEqual(['shared'])
     expect(canTurnOn({ ...space(), shared: { role: 'member', members: [] } })).toEqual([])
+  })
+
+  it('offers an agent for any space of the account’s own, never a shared one', () => {
+    expect(canTurnOn(space())).toContain('agent')
+    expect(canTurnOn({ ...space(), id: 'default' })).toEqual(['agent'])
+    expect(canTurnOn({ ...space(), shared: { role: 'owner', members: [] } })).not.toContain('agent')
   })
 })
 
@@ -47,9 +54,13 @@ describe('traitRows', () => {
     ])
   })
 
-  it('lists only what can be turned on for a space with none', () => {
-    expect(traitRows(space()).map((r) => [r.kind, r.kind === 'off' ? r.entry.key : r.trait.key])).toEqual([['off', 'shared']])
-    expect(traitRows({ ...space(), id: 'default' })).toEqual([])
+  it('lists only what can be turned on for a space with none, and the account can turn on now', () => {
+    expect(keys(traitRows(space()))).toEqual([
+      ['off', 'shared'],
+      ['off', 'agent'],
+    ])
+    expect(keys(traitRows(space(), (key) => key !== 'agent'))).toEqual([['off', 'shared']])
+    expect(keys(traitRows({ ...space(), id: 'default' }, (key) => key !== 'agent'))).toEqual([])
   })
 })
 
