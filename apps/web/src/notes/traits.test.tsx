@@ -26,14 +26,14 @@ describe('the registry', () => {
     expect(canTurnOn(space())).toContain('shared')
     expect(canTurnOn({ ...space(), id: 'default' })).not.toContain('shared')
     // Shared once, no one left in it: its owner can share it again.
-    expect(canTurnOn({ ...space(), shared: { role: 'owner', members: [{ id: 1, username: 'me' }] } })).toEqual(['shared'])
-    expect(canTurnOn({ ...space(), shared: { role: 'member', members: [] } })).toEqual([])
+    expect(canTurnOn({ ...space(), shared: { role: 'owner', members: [{ id: 1, username: 'me' }] } })).toContain('shared')
+    expect(canTurnOn({ ...space(), shared: { role: 'member', members: [] } })).not.toContain('shared')
   })
 
-  it('offers an agent for any space of the account’s own, never a shared one', () => {
+  it('offers an agent for any space, shared or not, to any member', () => {
     expect(canTurnOn(space())).toContain('agent')
     expect(canTurnOn({ ...space(), id: 'default' })).toEqual(['agent'])
-    expect(canTurnOn({ ...space(), shared: { role: 'owner', members: [] } })).not.toContain('agent')
+    expect(canTurnOn({ ...space(), shared: { role: 'member', members: [] } })).toEqual(['agent'])
   })
 })
 

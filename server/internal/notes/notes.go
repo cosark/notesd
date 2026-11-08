@@ -239,6 +239,8 @@ type Event struct {
 	Kind   string // EventCreated, EventUpdated or EventDeleted
 	NoteID string
 	OpID   string
+	// By is the account writing (UpdatedBy); 0 when none was given.
+	By int64
 	// Unchanged is an update that changed nothing (StatusUnchanged) or a
 	// delete of a tombstone (StatusAlreadyDeleted): no new revision.
 	Unchanged bool
@@ -291,8 +293,9 @@ type Store struct {
 	shared bool
 	// elsewhere reports whether a space this file doesn't have is in another
 	// file userID reaches.
-	elsewhere func(ctx context.Context, userID int64, spaceID string) (bool, error)
-	onWrite   []func(context.Context, *sql.Tx, Event) error
+	elsewhere   func(ctx context.Context, userID int64, spaceID string) (bool, error)
+	onWrite     []func(context.Context, *sql.Tx, Event) error
+	onSpaceLeft []func(context.Context, *sql.Tx, string) error
 }
 
 // NewStore returns a Store over an account's file, using the system clock.
@@ -452,7 +455,7 @@ func (s *Store) Create(ctx context.Context, in CreateInput) (Result, error) {
 		updated = created
 	}
 
-	ev := Event{Kind: EventCreated, NoteID: in.ID, OpID: in.OperationID, Agent: in.Agent, Origin: in.Origin}
+	ev := Event{Kind: EventCreated, NoteID: in.ID, OpID: in.OperationID, By: in.UpdatedBy, Agent: in.Agent, Origin: in.Origin}
 	return s.apply(ctx, in.OperationID, fingerprint(in.Fingerprint, "create", "", in), &ev, func(tx *sql.Tx) (Result, error) {
 		if cur, err := loadForUpdate(ctx, tx, in.ID); err == nil {
 			return Result{}, &ConflictError{Code: CodeNoteExists, Current: cur.Note}
@@ -521,7 +524,7 @@ func (s *Store) Update(ctx context.Context, in UpdateInput) (Result, error) {
 	updated := s.clientTime(in.UpdatedAt, now)
 
 	locking := false
-	ev := Event{Kind: EventUpdated, NoteID: in.ID, OpID: in.OperationID, Agent: in.Agent, Origin: in.Origin}
+	ev := Event{Kind: EventUpdated, NoteID: in.ID, OpID: in.OperationID, By: in.UpdatedBy, Agent: in.Agent, Origin: in.Origin}
 	res, err := s.apply(ctx, in.OperationID, fingerprint(in.Fingerprint, "update", in.ID, in), &ev, func(tx *sql.Tx) (Result, error) {
 		cur, err := loadForUpdate(ctx, tx, in.ID)
 		if err != nil {
@@ -614,7 +617,7 @@ func (s *Store) Delete(ctx context.Context, in DeleteInput) (Result, error) {
 	}
 	now := s.now().UnixMilli()
 
-	ev := Event{Kind: EventDeleted, NoteID: in.ID, OpID: in.OperationID, Agent: in.Agent, Origin: in.Origin}
+	ev := Event{Kind: EventDeleted, NoteID: in.ID, OpID: in.OperationID, By: in.UpdatedBy, Agent: in.Agent, Origin: in.Origin}
 	return s.apply(ctx, in.OperationID, fingerprint(in.Fingerprint, "delete", in.ID, in), &ev, func(tx *sql.Tx) (Result, error) {
 		cur, err := loadForUpdate(ctx, tx, in.ID)
 		if err != nil {
