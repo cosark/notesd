@@ -105,7 +105,14 @@ import notes.core.db.Spaces
  * itself once the space is gone, deleted here or elsewhere, or left.
  */
 @Composable
-fun SpaceInfoScreen(graph: AppGraph, id: String, backLabel: String?, onBack: () -> Unit) {
+fun SpaceInfoScreen(
+    graph: AppGraph,
+    id: String,
+    backLabel: String?,
+    onBack: () -> Unit,
+    /** A space's Activity, from its agent's section. */
+    onActivity: (String) -> Unit = {}
+) {
     val spaces by graph.spaces.collectAsStateWithLifecycle()
     val account by graph.accounts.account.collectAsStateWithLifecycle()
     val agents by graph.agents.cache.value.collectAsStateWithLifecycle()
@@ -119,7 +126,7 @@ fun SpaceInfoScreen(graph: AppGraph, id: String, backLabel: String?, onBack: () 
         graph.agents.cache.refresh()
     }
     val registry = remember(graph, account, agents, ai, agentsFailed, aiFailed) {
-        spaceInfoRegistry(graph) { space ->
+        spaceInfoRegistry(graph, onActivity) { space ->
             // Signed in but couldn't tell: the section says so, with Try again, rather than hiding.
             val unsure = (agents == null && agentsFailed) || (ai == null && aiFailed)
             if (unsure && account is Account.SignedIn) return@spaceInfoRegistry true
@@ -187,20 +194,23 @@ fun SpaceInfoScreen(graph: AppGraph, id: String, backLabel: String?, onBack: () 
  * it's there to use for the account's own spaces but the default, and for a shared one its owner stopped sharing.
  * The agent's sets it up (§7.10).
  */
-internal fun spaceInfoRegistry(graph: AppGraph, agentOffered: (Space) -> Boolean): List<TraitEntry> =
-    SpaceTraits.entries.map {
-        when (it.key) {
-            "shared" -> it.with(
-                section = { space -> PeopleSection(graph, space) },
-                canTurnOn = { space -> space.id != Spaces.DEFAULT && space.shared?.isOwner != false }
-            )
+internal fun spaceInfoRegistry(
+    graph: AppGraph,
+    onActivity: (String) -> Unit,
+    agentOffered: (Space) -> Boolean
+): List<TraitEntry> = SpaceTraits.entries.map {
+    when (it.key) {
+        "shared" -> it.with(
+            section = { space -> PeopleSection(graph, space) },
+            canTurnOn = { space -> space.id != Spaces.DEFAULT && space.shared?.isOwner != false }
+        )
 
-            // Any space, shared or not, by any member (§7.10); offered once AI is set up, or to resume one paused.
-            "agent" -> it.with(section = { space -> AgentSection(graph, space) }, canTurnOn = agentOffered)
+        // Any space, shared or not, by any member (§7.10); offered once AI is set up, or to resume one paused.
+        "agent" -> it.with(section = { space -> AgentSection(graph, space, onActivity) }, canTurnOn = agentOffered)
 
-            else -> it
-        }
+        else -> it
     }
+}
 
 /**
  * The page itself: icon, name and note count with the trait glyphs (the owner changes the name and icon right
