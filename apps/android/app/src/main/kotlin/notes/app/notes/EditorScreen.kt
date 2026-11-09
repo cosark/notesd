@@ -530,6 +530,7 @@ fun EditorScreen(
                         onLinkTap = { linkTap = it }
                         setOnFocusChangeListener { _, has -> focused = has }
                         editor = this
+                        vm.attach(this)
                         // A new note opens ready to type the title. Focus alone doesn't raise the keyboard, and
                         // neither works before the view is attached.
                         if (vm.isNew) {
@@ -547,7 +548,10 @@ fun EditorScreen(
                 },
                 // The space's theme, as it changes too: the view's spans read the colours as they draw.
                 update = { (it.getChildAt(0) as? NoteEditText)?.applyTokens(t) },
-                onRelease = { editor = null },
+                onRelease = {
+                    editor = null
+                    vm.attach(null)
+                },
                 // Compose doesn't clip a native view: the edge stretch would draw the text over the top bar.
                 modifier = Modifier.weight(1f).fillMaxWidth().clipToBounds()
             )
