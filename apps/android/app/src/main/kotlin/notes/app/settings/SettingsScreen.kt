@@ -87,9 +87,14 @@ fun SettingsScreen(graph: AppGraph, backLabel: String?, onBack: () -> Unit, onOp
     val lockState by graph.locks.state.collectAsStateWithLifecycle()
     val spaces by graph.spaces.collectAsStateWithLifecycle()
     val email by graph.email.settings.collectAsStateWithLifecycle()
+    val ai by graph.ai.cache.value.collectAsStateWithLifecycle()
     var pending by remember { mutableIntStateOf(0) }
     val syncStatus by graph.sync.status.collectAsStateWithLifecycle()
-    LaunchedEffect(account) { if (account is Account.SignedIn) graph.email.refresh() }
+    LaunchedEffect(account) {
+        if (account !is Account.SignedIn) return@LaunchedEffect
+        launch { graph.ai.cache.refresh() }
+        graph.email.refresh()
+    }
     LaunchedEffect(Unit) {
         graph.store.changes.onSubscription { emit(Unit) }.collect { pending = graph.store.pendingNotes() }
     }
@@ -109,7 +114,7 @@ fun SettingsScreen(graph: AppGraph, backLabel: String?, onBack: () -> Unit, onOp
             }
             CategoryRow(Icons.Spaces, SettingsSection.Spaces, "${spaces.size}", onOpen)
             if (account is Account.SignedIn) {
-                CategoryRow(Icons.Mail, SettingsSection.Integrations, integrationsValue(email), onOpen)
+                CategoryRow(Icons.Mail, SettingsSection.Integrations, integrationsValue(email, ai), onOpen)
             }
             GroupHeader("This phone only")
             CategoryRow(Icons.Appearance, SettingsSection.Appearance, theme.label, onOpen)
@@ -194,7 +199,10 @@ fun SettingsSectionScreen(
                 if (passwordChanged) {
                     Footnote("Password changed. Every other browser and device was signed out and needs the new one.")
                 }
-                (account as? Account.SignedIn)?.let { PeopleSection(graph, it) }
+                (account as? Account.SignedIn)?.let {
+                    PeopleSection(graph, it)
+                    TimeZoneCard(graph)
+                }
             }
 
             SettingsSection.Security -> {
