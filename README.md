@@ -32,6 +32,10 @@ Then put HTTPS in front of `127.0.0.1:8080` with Caddy or Tailscale. The
 and connecting your phone. To run it without Docker, see
 [Run the binary with systemd](docs/guides/self-hosting/binary-systemd.md).
 
+## One-Click Deploy
+
+[![Deploy on RepoCloud](https://d16t0pc4846x52.cloudfront.net/deploylobe.svg)](https://repocloud.io/details/Notesd/)
+
 ## Features
 
 - **Offline-first apps.** The Android and iPhone apps, and the web app if you choose, keep a full
