@@ -1,5 +1,6 @@
 package notes.app.settings
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.spring
@@ -33,6 +34,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -74,6 +76,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import notes.app.AppGraph
+import notes.app.account.Account
+import notes.app.agent.AgentSection
 import notes.app.notes.SpaceIconGrid
 import notes.app.notes.SpaceIconImage
 import notes.app.notes.SpaceTraits
@@ -103,7 +107,22 @@ import notes.core.db.Spaces
 @Composable
 fun SpaceInfoScreen(graph: AppGraph, id: String, backLabel: String?, onBack: () -> Unit) {
     val spaces by graph.spaces.collectAsStateWithLifecycle()
-    val registry = remember(graph) { spaceInfoRegistry(graph) }
+    val account by graph.accounts.account.collectAsStateWithLifecycle()
+    val agents by graph.agents.cache.value.collectAsStateWithLifecycle()
+    val ai by graph.ai.cache.value.collectAsStateWithLifecycle()
+    // Fresh as the page opens: another device may have set one up, or an admin connected AI.
+    LaunchedEffect(account) {
+        if (account !is Account.SignedIn) return@LaunchedEffect
+        launch { graph.ai.cache.refresh() }
+        graph.agents.cache.refresh()
+    }
+    val registry = remember(graph, agents, ai) {
+        spaceInfoRegistry(graph) { space ->
+            val configs = agents ?: return@spaceInfoRegistry false
+            val provider = ai ?: return@spaceInfoRegistry false
+            provider.configured || space.id in configs
+        }
+    }
     val space = spaces.firstOrNull { it.id == id }
     // The list starts empty while it loads: only a space seen here and then missing is gone.
     var seen by remember { mutableStateOf(false) }
@@ -159,16 +178,24 @@ fun SpaceInfoScreen(graph: AppGraph, id: String, backLabel: String?, onBack: () 
 }
 
 /**
- * The app's traits with sharing's section, People (§7.9): inviting someone is what shares a space, so it's
- * there to use for the account's own spaces but the default, and for a shared one its owner stopped sharing.
+ * The app's traits with their sections. Sharing's is People (§7.9): inviting someone is what shares a space, so
+ * it's there to use for the account's own spaces but the default, and for a shared one its owner stopped sharing.
+ * The agent's sets it up (§7.10).
  */
-internal fun spaceInfoRegistry(graph: AppGraph): List<TraitEntry> = SpaceTraits.entries.map {
-    if (it.key != "shared") return@map it
-    it.with(
-        section = { space -> PeopleSection(graph, space) },
-        canTurnOn = { space -> space.id != Spaces.DEFAULT && space.shared?.isOwner != false }
-    )
-}
+internal fun spaceInfoRegistry(graph: AppGraph, agentOffered: (Space) -> Boolean): List<TraitEntry> =
+    SpaceTraits.entries.map {
+        when (it.key) {
+            "shared" -> it.with(
+                section = { space -> PeopleSection(graph, space) },
+                canTurnOn = { space -> space.id != Spaces.DEFAULT && space.shared?.isOwner != false }
+            )
+
+            // Any space, shared or not, by any member (§7.10); offered once AI is set up, or to resume one paused.
+            "agent" -> it.with(section = { space -> AgentSection(graph, space) }, canTurnOn = agentOffered)
+
+            else -> it
+        }
+    }
 
 /**
  * The page itself: icon, name and note count with the trait glyphs (the owner changes the name and icon right
@@ -214,41 +241,67 @@ internal fun SpaceInfoPage(
         }
     }
 
+    val unsaved = remember { UnsavedSections() }
+    var discarding by remember { mutableStateOf(false) }
+    val changed = unsaved.unsaved
+    val leave = { if (changed.isEmpty()) onBack() else discarding = true }
+    BackHandler(enabled = changed.isNotEmpty() && !discarding) { discarding = true }
+
     // The page takes the theme of the icon shown, a pick's before the list has it.
     SpaceTheme(SpaceThemes.key(shownIcon)) {
-        SettingsFrame(backLabel, onBack, null) {
-            Column(
-                Modifier
-                    .fillMaxWidth()
-                    // A tap off the name ends editing it, as leaving the field does on the web.
-                    .pointerInput(Unit) { detectTapGestures(onTap = { focus.clearFocus() }) }
-            ) {
-                Header(
-                    space,
-                    shownName,
-                    shownIcon,
-                    own,
-                    picking,
-                    initialTraits,
-                    onIcon = { picking = !picking },
-                    onRename = { save(it, shownIcon) }
+        SettingsFrame(
+            backLabel,
+            leave,
+            null,
+            top = {
+                InlineConfirm(
+                    visible = discarding && changed.isNotEmpty(),
+                    title = "Discard your changes?",
+                    text = "Your changes to ${changed.joinToString(" and ")} aren't saved.",
+                    action = "Discard",
+                    onConfirm = {
+                        discarding = false
+                        onBack()
+                    },
+                    onCancel = { discarding = false },
+                    modifier = Modifier.padding(horizontal = 16.dp).padding(bottom = 8.dp)
                 )
-                Reveal(own && picking) {
-                    Box(
-                        Modifier
-                            .fillMaxWidth()
-                            .padding(bottom = 8.dp)
-                            .clip(RoundedCornerShape(20.dp))
-                            .background(t.field)
-                            .border(1.dp, t.hair, RoundedCornerShape(20.dp))
-                            .padding(6.dp)
-                    ) {
-                        SpaceIconGrid(shownIcon, onSelect = { save(shownName, it) })
+            }
+        ) {
+            CompositionLocalProvider(LocalUnsaved provides unsaved) {
+                Column(
+                    Modifier
+                        .fillMaxWidth()
+                        // A tap off the name ends editing it, as leaving the field does on the web.
+                        .pointerInput(Unit) { detectTapGestures(onTap = { focus.clearFocus() }) }
+                ) {
+                    Header(
+                        space,
+                        shownName,
+                        shownIcon,
+                        own,
+                        picking,
+                        initialTraits,
+                        onIcon = { picking = !picking },
+                        onRename = { save(it, shownIcon) }
+                    )
+                    Reveal(own && picking) {
+                        Box(
+                            Modifier
+                                .fillMaxWidth()
+                                .padding(bottom = 8.dp)
+                                .clip(RoundedCornerShape(20.dp))
+                                .background(t.field)
+                                .border(1.dp, t.hair, RoundedCornerShape(20.dp))
+                                .padding(6.dp)
+                        ) {
+                            SpaceIconGrid(shownIcon, onSelect = { save(shownName, it) })
+                        }
                     }
+                    error?.let { PageError(it, Modifier.padding(bottom = 8.dp)) }
+                    Traits(space, registry)
+                    if (own) DeleteSpace(space, onDelete, work)
                 }
-                error?.let { PageError(it, Modifier.padding(bottom = 8.dp)) }
-                Traits(space, registry)
-                if (own) DeleteSpace(space, onDelete, work)
             }
         }
     }

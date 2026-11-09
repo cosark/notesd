@@ -8,6 +8,7 @@ import androidx.compose.ui.test.isEnabled
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextInput
 import androidx.test.core.app.ActivityScenario
 import androidx.test.core.app.ApplicationProvider
@@ -456,6 +457,39 @@ class ScreenshotTest {
             shoot("settings-server-time-zone")
         } finally {
             server.close()
+        }
+    }
+
+    /** The default space's agent in Space info, with rules, a note it reads, and Journal's parts offered. */
+    @Test
+    fun spaceInfoAgent() {
+        val notesd = FakeNotesd()
+        notesd.agents[Spaces.DEFAULT] = notes.core.api.AgentConfig(
+            Spaces.DEFAULT,
+            enabled = true,
+            prompt = "Everyday notes. Keep them findable with a small, consistent set of tags.",
+            triggers = mapOf("newNoteDone" to "Add 1 to 3 tags on a line at the end.", "menu" to ""),
+            referenceNotes = listOf("Tags")
+        )
+        notesd.start()
+        try {
+            notesd.signIn(graph)
+            graph.setOnboardingDismissed(true)
+            launch()
+            compose.onNode(hasContentDescription("Sidebar")).performClick()
+            compose.onNode(hasContentDescription("Settings")).performClick()
+            compose.waitUntilExactlyOneExists(hasText("Spaces"))
+            compose.onNode(hasText("Spaces")).performClick()
+            compose.waitUntilExactlyOneExists(hasText("Notes") and hasClickAction())
+            compose.onNode(hasText("Notes") and hasClickAction()).performClick()
+            compose.waitUntilExactlyOneExists(hasText("When you finish a new note"), 5_000)
+            shoot("space-info-agent")
+            compose.onNode(hasText("Journal") and hasClickAction()).performScrollTo().performClick()
+            compose.waitUntilExactlyOneExists(hasText("Journal's purpose"))
+            compose.onNode(hasText("Journal's purpose")).performScrollTo()
+            shoot("space-info-agent-example")
+        } finally {
+            notesd.close()
         }
     }
 

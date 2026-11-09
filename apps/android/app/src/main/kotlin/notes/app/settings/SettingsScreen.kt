@@ -294,6 +294,8 @@ internal fun SettingsFrame(
     backLabel: String?,
     onBack: () -> Unit,
     title: String?,
+    /** Under the back link, outside the scroll: a question it asks before going back. */
+    top: @Composable () -> Unit = {},
     content: @Composable ColumnScope.() -> Unit
 ) {
     val t = LocalTokens.current
@@ -304,6 +306,7 @@ internal fun SettingsFrame(
         ) {
             BackLink(backLabel, onBack)
         }
+        top()
         Column(
             Modifier
                 .fillMaxWidth()
